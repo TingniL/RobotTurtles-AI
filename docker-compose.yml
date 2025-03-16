@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  training:
+    build: .
+    volumes:
+      - ./outputs:/app/outputs
+      - ./config:/app/config
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    tty: true
+    stdin_open: true
+
+  tensorboard:
+    image: tensorflow/tensorflow:latest
+    command: tensorboard --logdir /logs --bind_all
+    ports:
+      - "6006:6006"
+    volumes:
+      - ./outputs:/logs 

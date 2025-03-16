@@ -1,0 +1,38 @@
+# 训练配置 - 测试版本
+training:
+  num_epochs: 10        # 减少epoch数用于测试
+  steps_per_epoch: 512  # 减少步数
+  eval_interval: 2      # 更频繁地评估
+  batch_size: 32       # 减小批次大小
+  num_processes: 2      # 减少进程数
+
+# PPO算法配置
+ppo:
+  learning_rate: 3e-4
+  gamma: 0.99
+  epsilon: 0.2
+  value_coef: 0.5
+  entropy_coef: 0.01
+  num_updates: 5       # 减少更新次数
+
+# 游戏环境配置
+env:
+  num_players: 2
+  enable_bug_card: false  # 先禁用Bug卡
+  three_rounds: false
+  max_program_size: 20
+
+# 模型配置
+model:
+  conv_channels: [32, 64, 64]
+  fc_dims: [256, 128]
+  dropout: 0.1
+
+# 设备配置
+device: cuda
+
+# 输出配置
+output:
+  base_dir: outputs
+  save_interval: 2    # 更频繁地保存
+  log_level: DEBUG    # 更详细的日志 
