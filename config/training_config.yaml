@@ -1,10 +1,17 @@
 # 训练配置 - 测试版本
 training:
-  num_epochs: 10        # 减少epoch数用于测试
-  steps_per_epoch: 512  # 减少步数
-  eval_interval: 2      # 更频繁地评估
+  num_epochs: 5         
+  steps_per_epoch: 64   # 减少步数以加快测试
+  eval_interval: 2      
   batch_size: 32       # 减小批次大小
-  num_processes: 2      # 减少进程数
+  num_processes: 8     # 增加进程数
+  max_steps: 100000    
+  checkpoint_dir: "outputs/checkpoints"
+  tensorboard_dir: "outputs/tensorboard"
+  num_workers: 4       
+  prefetch_factor: 2   
+  pin_memory: true     
+  parallel_envs: 4     # 减少并行环境数
 
 # PPO算法配置
 ppo:
@@ -13,26 +20,60 @@ ppo:
   epsilon: 0.2
   value_coef: 0.5
   entropy_coef: 0.01
-  num_updates: 5       # 减少更新次数
+  epochs: 5           
+  num_updates: 3      
+  lambda_: 0.95
+  clip_grad_norm: 0.5
+  target_kl: 0.01
+  mini_batch_size: 16  # 减小mini-batch大小
+  num_mini_batches: 4  # 每次更新的mini-batch数量
 
 # 游戏环境配置
-env:
+environment:
   num_players: 2
   enable_bug_card: false  # 先禁用Bug卡
   three_rounds: false
   max_program_size: 20
+  #board_size: 8
+  #observation_type: "full"  # 观察空间类型
+  #reward_shaping: true     # 是否使用奖励整形
 
 # 模型配置
 model:
-  conv_channels: [32, 64, 64]
-  fc_dims: [256, 128]
-  dropout: 0.1
+  input_channels: 9    # 输入通道数
+  #hidden_size: 256     # 增加模型容量
+  #conv_channels: [64, 128, 256]  # 增加卷积层通道数
+  #fc_dims: [512, 256]  # 增加全连接层维度
+  #use_batch_norm: true # 使用批归一化加速训练
+  #use_amp: true       # 使用自动混合精度训练
+  #dropout: 0.1
+  #activation: "relu"
 
 # 设备配置
 device: cuda
+seed: 42              # 随机种子
+cuda_deterministic: false  # 关闭确定性计算以提高速度
 
 # 输出配置
 output:
   base_dir: outputs
   save_interval: 2    # 更频繁地保存
-  log_level: DEBUG    # 更详细的日志 
+  log_level: INFO      # 减少日志输出提高性能
+  save_model: true
+  save_optimizer: true
+  eval_episodes: 10   # 评估时的对局数
+
+# 评估配置
+evaluation:
+  eval_frequency: 1000  # 每1000步评估一次
+  num_episodes: 5       # 每次评估进行5局游戏
+  save_best_only: true  # 只保存最佳模型 
+
+# 性能优化配置
+optimization:
+  use_torch_compile: true    # 使用PyTorch 2.0编译功能
+  memory_efficient: true     # 启用内存效率优化
+  gradient_accumulation: 2   # 梯度累积步数
+  use_fused_adam: true      # 使用融合Adam优化器
+  use_amp: true             # 使用自动混合精度
+  jit_script: true          # 使用JIT脚本优化 

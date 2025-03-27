@@ -6,8 +6,10 @@ services:
     volumes:
       - ./outputs:/app/outputs
       - ./config:/app/config
+      - ./src:/app/src
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
+      - PYTHONUNBUFFERED=1
     deploy:
       resources:
         reservations:
@@ -15,8 +17,6 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    tty: true
-    stdin_open: true
 
   tensorboard:
     image: tensorflow/tensorflow:latest
