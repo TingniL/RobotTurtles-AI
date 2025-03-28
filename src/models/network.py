@@ -2,90 +2,81 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Dict, Tuple
+import logging
 
 class RobotTurtlesNet(nn.Module):
-    """机器海龟神经网络模型"""
+    """Neural network for Robot Turtles game"""
     
     def __init__(self, input_channels: int = 9):
-        """
+        """Initialize the network
+        
         Args:
-            input_channels: 输入通道数
-                - 2个玩家位置
-                - 2种墙
-                - 4个方向
-                - 1个BugCard状态
+            input_channels: Number of input channels
         """
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("Initializing Robot Turtles network...")
+        
         super().__init__()
         
-        # 棋盘特征提取
-        self.conv1 = nn.Conv2d(input_channels, 32, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.conv3 = nn.Conv2d(64, 64, kernel_size=3, padding=1)
+        # CNN for board processing
+        self.board_conv = nn.Sequential(
+            nn.Conv2d(input_channels, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Flatten()
+        )
         
-        # 手牌特征提取 (5张牌 x 5种类型)
-        self.hand_fc = nn.Linear(25, 64)
+        # Calculate flattened size
+        self.board_flat_size = 64 * 8 * 8
         
-        # 程序特征提取 (20步 x 5种卡牌)
-        self.program_fc = nn.Linear(100, 64)
+        # Policy head
+        self.policy_head = nn.Sequential(
+            nn.Linear(self.board_flat_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU()
+        )
         
-        # 合并特征后的全连接层
-        self.fc1 = nn.Linear(64 * 8 * 8 + 64 + 64, 512)
-        self.fc2 = nn.Linear(512, 256)
+        # Action type output
+        self.action_type = nn.Linear(128, 8)
         
-        # 动作类型头 (8个动作类型)
-        self.action_type = nn.Linear(256, 8)
+        # Wall placement output
+        self.wall_probs = nn.Linear(128, 64)  # 8x8 grid
         
-        # 墙放置位置头 (8x8棋盘位置)
-        self.wall_position = nn.Linear(256, 64)
+        # Value head
+        self.value_head = nn.Sequential(
+            nn.Linear(self.board_flat_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1)
+        )
         
-        # 价值头
-        self.value = nn.Linear(256, 1)
+        self.logger.info("Network initialized successfully")
         
     def forward(self, x: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """
-        前向传播
+        """Forward pass
         
         Args:
-            x: 包含board, hand, program的字典
-                - board: [batch_size, channels, 8, 8]
-                - hand: [batch_size, 5, 5]
-                - program: [batch_size, 20, 5]
-                
+            x: Input dictionary containing board state
+            
         Returns:
-            包含action_probs, wall_probs, value的字典
+            Dictionary containing action probabilities and value
         """
-        # 解包输入
-        x_board = x['board']
-        x_hand = x['hand']
-        x_program = x['program']
+        # Process board state
+        board = x['board']
+        board_features = self.board_conv(board)
         
-        # 确保输入维度正确
-        batch_size = x_board.size(0)
-        x_hand = x_hand.reshape(batch_size, -1)
-        x_program = x_program.reshape(batch_size, -1)
+        # Get action probabilities
+        policy_features = self.policy_head(board_features)
+        action_probs = F.softmax(self.action_type(policy_features), dim=-1)
+        wall_probs = F.softmax(self.wall_probs(policy_features), dim=-1)
         
-        # 特征提取
-        x_board = F.relu(self.conv1(x_board))
-        x_board = F.relu(self.conv2(x_board))
-        x_board = F.relu(self.conv3(x_board))
-        x_board = x_board.reshape(batch_size, -1)
-        
-        x_hand = F.relu(self.hand_fc(x_hand))
-        x_program = F.relu(self.program_fc(x_program))
-        
-        # 合并特征
-        x = torch.cat([x_board, x_hand, x_program], dim=1)
-        
-        # 共享特征提取
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        
-        # 输出动作概率、墙放置概率和价值
-        action_probs = F.softmax(self.action_type(x), dim=1)
-        # 修改这一行，先展平后再用softmax
-        wall_logits = self.wall_position(x).reshape(batch_size, -1)  # 展平为 (batch_size, 64)
-        wall_probs = F.softmax(wall_logits, dim=1).reshape(batch_size, 8, 8)  # 重塑回 (batch_size, 8, 8)
-        value = self.value(x)
+        # Get state value
+        value = self.value_head(board_features)
         
         return {
             'action_probs': action_probs,

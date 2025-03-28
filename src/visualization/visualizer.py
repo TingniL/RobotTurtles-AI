@@ -3,19 +3,111 @@ import numpy as np
 from typing import Dict, List
 import seaborn as sns
 from ..environment.game_env import RobotTurtlesEnv
+import logging
+import cv2
 
 class GameVisualizer:
-    """游戏可视化工具"""
+    """Visualizer for Robot Turtles game"""
     
     def __init__(self):
-        self.colors = {
-            'empty': 'white',
-            'player': ['blue', 'red', 'green', 'yellow'],
-            'jewel': 'gold',
-            'stone_wall': 'gray',
-            'ice_wall': 'lightblue',
-            'laser': 'red'
-        }
+        """Initialize the visualizer"""
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("Initializing game visualizer...")
+        
+        # Initialize visualization settings
+        self.board_size = 8
+        self.cell_size = 60
+        self.margin = 20
+        
+        # Calculate window size
+        self.window_size = (
+            self.board_size * self.cell_size + 2 * self.margin,
+            self.board_size * self.cell_size + 2 * self.margin
+        )
+        
+        self.logger.info("Visualizer initialized successfully")
+        
+    def render(self, board: np.ndarray, info: Dict[str, Any] = None) -> None:
+        """Render the current game state
+        
+        Args:
+            board: Game board state
+            info: Additional game information
+        """
+        self.logger.info("Rendering game state...")
+        
+        # Create window
+        window = np.ones((*self.window_size, 3), dtype=np.uint8) * 255
+        
+        # Draw grid
+        for i in range(self.board_size + 1):
+            # Vertical lines
+            cv2.line(
+                window,
+                (self.margin + i * self.cell_size, self.margin),
+                (self.margin + i * self.cell_size, self.window_size[1] - self.margin),
+                (0, 0, 0),
+                1
+            )
+            # Horizontal lines
+            cv2.line(
+                window,
+                (self.margin, self.margin + i * self.cell_size),
+                (self.window_size[0] - self.margin, self.margin + i * self.cell_size),
+                (0, 0, 0),
+                1
+            )
+        
+        # Draw board elements
+        for i in range(self.board_size):
+            for j in range(self.board_size):
+                x = self.margin + j * self.cell_size
+                y = self.margin + i * self.cell_size
+                
+                # Draw player
+                if board[0, i, j] == 1:
+                    cv2.circle(
+                        window,
+                        (x + self.cell_size // 2, y + self.cell_size // 2),
+                        self.cell_size // 3,
+                        (0, 0, 255),
+                        -1
+                    )
+                
+                # Draw walls
+                if board[1, i, j] == 1:
+                    cv2.rectangle(
+                        window,
+                        (x + 5, y + 5),
+                        (x + self.cell_size - 5, y + self.cell_size - 5),
+                        (0, 255, 0),
+                        -1
+                    )
+        
+        # Draw info text if provided
+        if info:
+            text = f"Steps: {info.get('steps_taken', 0)}"
+            cv2.putText(
+                window,
+                text,
+                (self.margin, self.window_size[1] - 5),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 0, 0),
+                1
+            )
+        
+        # Show window
+        cv2.imshow('Robot Turtles', window)
+        cv2.waitKey(1)
+        
+        self.logger.info("Game state rendered successfully")
+        
+    def close(self) -> None:
+        """Close visualization window"""
+        self.logger.info("Closing visualization window...")
+        cv2.destroyAllWindows()
+        self.logger.info("Visualization window closed")
         
     def render_game_state(
         self,
@@ -33,16 +125,16 @@ class GameVisualizer:
             for y in range(8):
                 content = env._get_cell_content((x, y))
                 if content['empty']:
-                    color = self.colors['empty']
+                    color = 'white'
                 elif content['jewel']:
-                    color = self.colors['jewel']
+                    color = 'gold'
                 elif content['wall'] is not None:
-                    color = (self.colors['stone_wall'] 
-                            if content['wall'].value == 0 
-                            else self.colors['ice_wall'])
+                    color = (
+                        'gray' if content['wall'].value == 0 
+                        else 'lightblue')
                 elif content['player'] is not None:
                     player_idx = env.players.index(content['player'])
-                    color = self.colors['player'][player_idx]
+                    color = ['blue', 'red', 'green', 'yellow'][player_idx]
                     
                 # 转换颜色到RGB
                 rgb = plt.matplotlib.colors.to_rgb(color)

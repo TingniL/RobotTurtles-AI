@@ -1,77 +1,87 @@
 import torch
 import numpy as np
-from typing import Dict, List, Any, Optional
-from ..environment.game_env import RobotTurtlesEnv, GameConfig, Action
+from typing import Dict, List, Any, Optional, Tuple
+from ..environment.game_env import RobotTurtlesEnv, GameConfig
 from ..models.network import RobotTurtlesNet
+import logging
 
 class Evaluator:
-    """模型评估器"""
+    """Evaluator for Robot Turtles AI model"""
     
-    def __init__(self, model: RobotTurtlesNet, device: str = 'cuda'):
-        """
-        初始化评估器
+    def __init__(self, model: nn.Module, device: torch.device):
+        """Initialize the evaluator
         
         Args:
-            model: 策略网络
-            device: 计算设备
+            model: The model to evaluate
+            device: Device to run evaluation on
         """
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("Initializing evaluator...")
+        
         self.model = model
         self.device = device
-        self.model.eval()
+        self.env = RobotTurtlesEnv(GameConfig())
         
-    def evaluate_against_random(
-        self, 
-        num_games: int = 100,
-        env_config: Optional[GameConfig] = None
-    ) -> Dict[str, float]:
-        """
-        对抗随机玩家的评估
+        self.logger.info("Evaluator initialized successfully")
+        
+    def evaluate_against_random(self, num_games: int = 10) -> Dict[str, float]:
+        """Evaluate the model against random opponent
         
         Args:
-            num_games: 评估游戏局数
-            env_config: 环境配置
+            num_games: Number of games to play
             
         Returns:
-            评估统计信息
+            Dictionary of evaluation metrics
         """
-        config = env_config or GameConfig(num_players=2)
-        env = RobotTurtlesEnv(config)
+        self.logger.info(f"Starting evaluation against random opponent for {num_games} games")
         
-        stats = {
-            'wins': 0,
-            'avg_steps': 0,
-            'avg_reward': 0,
-            'total_games': num_games
+        wins = 0
+        total_rewards = 0
+        total_steps = 0
+        
+        for game in range(num_games):
+            self.logger.info(f"Playing game {game+1}/{num_games}")
+            
+            obs, _ = self.env.reset()
+            done = False
+            truncated = False
+            game_reward = 0
+            game_steps = 0
+            
+            while not (done or truncated):
+                # Get model action
+                action, _, _ = self._get_action(obs)
+                
+                # Execute action
+                obs, reward, done, truncated, info = self.env.step(action)
+                
+                game_reward += reward
+                game_steps += 1
+                
+                if done:
+                    wins += 1
+                    self.logger.info(f"Game {game+1} won in {game_steps} steps")
+                elif truncated:
+                    self.logger.info(f"Game {game+1} truncated after {game_steps} steps")
+            
+            total_rewards += game_reward
+            total_steps += game_steps
+        
+        # Calculate metrics
+        win_rate = wins / num_games
+        avg_reward = total_rewards / num_games
+        avg_steps = total_steps / num_games
+        
+        metrics = {
+            'win_rate': win_rate,
+            'avg_reward': avg_reward,
+            'avg_steps': avg_steps
         }
         
-        for _ in range(num_games):
-            obs = env.reset()[0]
-            done = False
-            total_reward = 0
-            steps = 0
-            
-            while not done:
-                if env.current_player == 0:  # AI玩家
-                    action = self._get_action(obs)
-                else:  # 随机玩家
-                    valid_actions = env.get_valid_actions()
-                    action = valid_actions[np.random.randint(len(valid_actions))]
-                
-                obs, reward, done, _, info = env.step(action)
-                total_reward += reward
-                steps += 1
-                
-            if info.get('winner', -1) == 0:  # AI获胜
-                stats['wins'] += 1
-            stats['avg_steps'] += steps
-            stats['avg_reward'] += total_reward
-            
-        # 计算平均值
-        stats['win_rate'] = stats['wins'] / num_games
-        stats['avg_steps'] /= num_games
-        stats['avg_reward'] /= num_games
+        self.logger.info("Evaluation completed")
+        self.logger.info(f"Results: {metrics}")
         
-        return stats
+        return metrics
     
     def evaluate_self_play(
         self, 
@@ -122,42 +132,44 @@ class Evaluator:
         
         return stats
     
-    def _get_action(self, obs: Dict[str, np.ndarray]) -> Action:
-        """
-        获取模型预测的动作
+    def _get_action(self, obs: Dict[str, np.ndarray]) -> Tuple[Dict[str, Any], torch.Tensor, torch.Tensor]:
+        """Get action from model
         
         Args:
-            obs: 观察空间
+            obs: Current observation
             
         Returns:
-            预测的动作
+            Tuple of (action, log_prob, value)
         """
+        # Convert observation to tensor
+        obs_tensor = {}
+        for k, v in obs.items():
+            obs_tensor[k] = torch.FloatTensor(v).unsqueeze(0).to(self.device)
+        
+        # Get action from model
         with torch.no_grad():
-            # 转换观察为tensor
-            state = {
-                k: torch.FloatTensor(v).unsqueeze(0).to(self.device) 
-                for k, v in obs.items()
-            }
-            
-            # 获取模型输出
-            outputs = self.model(state)
-            action_probs = outputs['action_probs'][0].cpu().numpy()
-            wall_probs = outputs['wall_probs'][0].cpu().numpy()
-            
-            # 选择动作
-            action_type = np.argmax(action_probs)
-            if action_type in [4, 5]:  # 放墙动作
-                wall_pos = np.unravel_index(
-                    np.argmax(wall_probs), 
-                    wall_probs.shape
-                )
-            else:
-                wall_pos = (0, 0)  # 默认值
-                
-            return {
-                'action_type': action_type,
-                'wall_position': wall_pos
-            }
+            outputs = self.model(obs_tensor)
+            action_probs = outputs['action_probs'][0]
+            wall_probs = outputs['wall_probs'][0]
+            value = outputs['value'][0]
+        
+        # Sample action
+        action_type = torch.multinomial(action_probs, 1).item()
+        wall_idx = torch.multinomial(wall_probs.reshape(-1), 1).item()
+        wall_pos = (wall_idx // 8, wall_idx % 8)
+        
+        # Create action dictionary
+        action = {
+            'action_type': action_type,
+            'wall_position': wall_pos
+        }
+        
+        # Calculate log probabilities
+        action_log_prob = torch.log(action_probs[action_type] + 1e-10)
+        wall_log_prob = torch.log(wall_probs.reshape(-1)[wall_idx] + 1e-10)
+        log_prob = action_log_prob + wall_log_prob
+        
+        return action, log_prob, value
 
     def evaluate(self, env: RobotTurtlesEnv) -> Dict[str, float]:
         """
@@ -173,7 +185,7 @@ class Evaluator:
         env_config = env.config
         
         # 运行两种评估
-        random_stats = self.evaluate_against_random(num_games=10, env_config=env_config)
+        random_stats = self.evaluate_against_random(num_games=10)
         self_play_stats = self.evaluate_self_play(num_games=5, env_config=env_config)
         
         # 合并统计信息

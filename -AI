@@ -1,0 +1,394 @@
+[1mdiff --git a/check_encoding.py b/check_encoding.py[m
+[1mdeleted file mode 100644[m
+[1mindex 80b6ce3..0000000[m
+[1m--- a/check_encoding.py[m
+[1m+++ /dev/null[m
+[36m@@ -1,23 +0,0 @@[m
+[31m-import os[m
+[31m-[m
+[31m-def check_file_encoding(filepath):[m
+[31m-    try:[m
+[31m-        with open(filepath, 'rb') as file:[m
+[31m-            raw = file.read()[m
+[31m-            if raw.startswith(b'\xef\xbb\xbf'):[m
+[31m-                print(f"File {filepath} has UTF-8 BOM")[m
+[31m-            elif b'\x00' in raw:[m
+[31m-                print(f"File {filepath} contains null bytes at positions: {[i for i, b in enumerate(raw) if b == 0]}")[m
+[31m-            else:[m
+[31m-                print(f"File {filepath} looks OK")[m
+[31m-    except Exception as e:[m
+[31m-        print(f"Error checking {filepath}: {e}")[m
+[31m-[m
+[31m-# 只检查项目文件，不检查 venv[m
+[31m-for root, dirs, files in os.walk('.'):[m
+[31m-    if 'venv' in root:[m
+[31m-        continue[m
+[31m-    for file in files:[m
+[31m-        if file.endswith('.py'):[m
+[31m-            filepath = os.path.join(root, file)[m
+[31m-            check_file_encoding(filepath)[m
+\ No newline at end of file[m
+[1mdiff --git a/clean_file.py b/clean_file.py[m
+[1mdeleted file mode 100644[m
+[1mindex 350a5c4..0000000[m
+[1m--- a/clean_file.py[m
+[1m+++ /dev/null[m
+[36m@@ -1,19 +0,0 @@[m
+[31m-def clean_file(filepath):[m
+[31m-    try:[m
+[31m-        # 读取文件内容[m
+[31m-        with open(filepath, 'rb') as f:[m
+[31m-            content = f.read()[m
+[31m-        [m
+[31m-        # 移除所有的空字节[m
+[31m-        cleaned_content = content.replace(b'\x00', b'')[m
+[31m-        [m
+[31m-        # 写回文件[m
+[31m-        with open(filepath, 'wb') as f:[m
+[31m-            f.write(cleaned_content)[m
+[31m-            [m
+[31m-        print(f"已清理文件: {filepath}")[m
+[31m-    except Exception as e:[m
+[31m-        print(f"清理文件时出错 {filepath}: {e}")[m
+[31m-[m
+[31m-# 清理 game_env.py[m
+[31m-clean_file('src/environment/game_env.py')[m
+\ No newline at end of file[m
+[1mdiff --git a/config/training_config.yaml b/config/training_config.yaml[m
+[1mindex 1df4765..be5cf44 100644[m
+[1m--- a/config/training_config.yaml[m
+[1m+++ b/config/training_config.yaml[m
+[36m@@ -1,10 +1,17 @@[m
+ # 训练配置 - 测试版本[m
+ training:[m
+[31m-  num_epochs: 10        # 减少epoch数用于测试[m
+[31m-  steps_per_epoch: 512  # 减少步数[m
+[31m-  eval_interval: 2      # 更频繁地评估[m
+[32m+[m[32m  num_epochs: 5[m[41m         [m
+[32m+[m[32m  steps_per_epoch: 64   # 减少步数以加快测试[m
+[32m+[m[32m  eval_interval: 2[m[41m      [m
+   batch_size: 32       # 减小批次大小[m
+[31m-  num_processes: 2      # 减少进程数[m
+[32m+[m[32m  num_processes: 8     # 增加进程数[m
+[32m+[m[32m  max_steps: 100000[m[41m    [m
+[32m+[m[32m  checkpoint_dir: "outputs/checkpoints"[m
+[32m+[m[32m  tensorboard_dir: "outputs/tensorboard"[m
+[32m+[m[32m  num_workers: 4[m[41m       [m
+[32m+[m[32m  prefetch_factor: 2[m[41m   [m
+[32m+[m[32m  pin_memory: true[m[41m     [m
+[32m+[m[32m  parallel_envs: 4     # 减少并行环境数[m
+ [m
+ # PPO算法配置[m
+ ppo:[m
+[36m@@ -13,26 +20,60 @@[m [mppo:[m
+   epsilon: 0.2[m
+   value_coef: 0.5[m
+   entropy_coef: 0.01[m
+[31m-  num_updates: 5       # 减少更新次数[m
+[32m+[m[32m  epochs: 5[m[41m           [m
+[32m+[m[32m  num_updates: 3[m[41m      [m
+[32m+[m[32m  lambda_: 0.95[m
+[32m+[m[32m  clip_grad_norm: 0.5[m
+[32m+[m[32m  target_kl: 0.01[m
+[32m+[m[32m  mini_batch_size: 16  # 减小mini-batch大小[m
+[32m+[m[32m  num_mini_batches: 4  # 每次更新的mini-batch数量[m
+ [m
+ # 游戏环境配置[m
+[31m-env:[m
+[32m+[m[32menvironment:[m
+   num_players: 2[m
+   enable_bug_card: false  # 先禁用Bug卡[m
+   three_rounds: false[m
+   max_program_size: 20[m
+[32m+[m[32m  #board_size: 8[m
+[32m+[m[32m  #observation_type: "full"  # 观察空间类型[m
+[32m+[m[32m  #reward_shaping: true     # 是否使用奖励整形[m
+ [m
+ # 模型配置[m
+ model:[m
+[31m-  conv_channels: [32, 64, 64][m
+[31m-  fc_dims: [256, 128][m
+[31m-  dropout: 0.1[m
+[32m+[m[32m  input_channels: 9    # 输入通道数[m
+[32m+[m[32m  #hidden_size: 256     # 增加模型容量[m
+[32m+[m[32m  #conv_channels: [64, 128, 256]  # 增加卷积层通道数[m
+[32m+[m[32m  #fc_dims: [512, 256]  # 增加全连接层维度[m
+[32m+[m[32m  #use_batch_norm: true # 使用批归一化加速训练[m
+[32m+[m[32m  #use_amp: true       # 使用自动混合精度训练[m
+[32m+[m[32m  #dropout: 0.1[m
+[32m+[m[32m  #activation: "relu"[m
+ [m
+ # 设备配置[m
+ device: cuda[m
+[32m+[m[32mseed: 42              # 随机种子[m
+[32m+[m[32mcuda_deterministic: false  # 关闭确定性计算以提高速度[m
+ [m
+ # 输出配置[m
+ output:[m
+   base_dir: outputs[m
+   save_interval: 2    # 更频繁地保存[m
+[31m-  log_level: DEBUG    # 更详细的日志 [m
+\ No newline at end of file[m
+[32m+[m[32m  log_level: INFO      # 减少日志输出提高性能[m
+[32m+[m[32m  save_model: true[m
+[32m+[m[32m  save_optimizer: true[m
+[32m+[m[32m  eval_episodes: 10   # 评估时的对局数[m
+[32m+[m
+[32m+[m[32m# 评估配置[m
+[32m+[m[32mevaluation:[m
+[32m+[m[32m  eval_frequency: 1000  # 每1000步评估一次[m
+[32m+[m[32m  num_episodes: 5       # 每次评估进行5局游戏[m
+[32m+[m[32m  save_best_only: true  # 只保存最佳模型[m[41m [m
+[32m+[m
+[32m+[m[32m# 性能优化配置[m
+[32m+[m[32moptimization:[m
+[32m+[m[32m  use_torch_compile: true    # 使用PyTorch 2.0编译功能[m
+[32m+[m[32m  memory_efficient: true     # 启用内存效率优化[m
+[32m+[m[32m  gradient_accumulation: 2   # 梯度累积步数[m
+[32m+[m[32m  use_fused_adam: true      # 使用融合Adam优化器[m
+[32m+[m[32m  use_amp: true             # 使用自动混合精度[m
+[32m+[m[32m  jit_script: true          # 使用JIT脚本优化[m[41m [m
+\ No newline at end of file[m
+[1mdiff --git a/create_game_env.py b/create_game_env.py[m
+[1mdeleted file mode 100644[m
+[1mindex 0534012..0000000[m
+[1m--- a/create_game_env.py[m
+[1m+++ /dev/null[m
+[36m@@ -1,359 +0,0 @@[m
+[31m-content = '''import gymnasium as gym[m
+[31m-import numpy as np[m
+[31m-from gymnasium import spaces[m
+[31m-from enum import Enum[m
+[31m-from dataclasses import dataclass[m
+[31m-from typing import List, Tuple, Dict[m
+[31m-import logging[m
+[31m-from collections import deque[m
+[31m-[m
+[31m-logger = logging.getLogger(__name__)[m
+[31m-[m
+[31m-class Direction(Enum):[m
+[31m-    NORTH = 0[m
+[31m-    EAST = 1[m
+[31m-    SOUTH = 2[m
+[31m-    WEST = 3[m
+[31m-[m
+[31m-class CardType(Enum):[m
+[31m-    BLUE = 0    # 移动[m
+[31m-    YELLOW = 1  # 转向[m
+[31m-    PURPLE = 2  # 射线[m
+[31m-    LASER = 3   # 激光[m
+[31m-    BUG = 4     # BugCard[m
+[31m-[m
+[31m-class WallType(Enum):[m
+[31m-    STONE = 0  # 石墙（不可摧毁）[m
+[31m-    ICE = 1    # 冰墙（可摧毁）[m
+[31m-[m
+[31m-@dataclass[m
+[31m-class GameConfig:[m
+[31m-    """游戏配置"""[m
+[31m-    num_players: int = 2[m
+[31m-    enable_bug_card: bool = False  # 是否启用BugCard[m
+[31m-    three_rounds: bool = False     # 是否启用三局制[m
+[31m-    max_program_size: int = 20     # 最大程序长度[m
+[31m-[m
+[31m-@dataclass[m
+[31m-class Player:[m
+[31m-    position: Tuple[int, int][m
+[31m-    direction: Direction[m
+[31m-    stone_walls: int = 3  # 石墙数量[m
+[31m-    ice_walls: int = 2    # 冰墙数量[m
+[31m-    cards: List[CardType] = None[m
+[31m-    start_position: Tuple[int, int] = None[m
+[31m-    program: List[CardType] = None  # 程序[m
+[31m-    hand: List[CardType] = None     # 手牌[m
+[31m-    score: int = 0                  # 分数[m
+[31m-    bug_card: bool = False          # BugCard[m
+[31m-    program_reversed: bool = False   # 程序是否反转[m
+[31m-[m
+[31m-    def __post_init__(self):[m
+[31m-        if self.program is None:[m
+[31m-            self.program = [][m
+[31m-        if self.hand is None:[m
+[31m-            self.hand = [][m
+[31m-            if self.cards:[m
+[31m-                self.draw_cards(5)[m
+[31m-[m
+[31m-    def draw_cards(self, count: int):[m
+[31m-        """从牌堆中抽取指定数量的牌"""[m
+[31m-        drawn = [][m
+[31m-        while len(drawn) < count and self.cards:[m
+[31m-            drawn.append(self.cards.pop(0))[m
+[31m-        self.hand.extend(drawn)[m
+[31m-        return drawn[m
+[31m-[m
+[31m-    def add_to_program(self, card: CardType):[m
+[31m-        """添加卡牌到程序中"""[m
+[31m-        if self.program_reversed:[m
+[31m-            self.program.insert(0, card)[m
+[31m-        else:[m
+[31m-            self.program.append(card)[m
+[31m-[m
+[31m-class RobotTurtlesEnv(gym.Env):[m
+[31m-    """机器海龟游戏环境"""[m
+[31m-    [m
+[31m-    def __init__(self, config: GameConfig = None):[m
+[31m-        super().__init__()[m
+[31m-        self.config = config or GameConfig()[m
+[31m-        self.num_players = self.config.num_players[m
+[31m-        self.round = 1  # 当前回合数[m
+[31m-        [m
+[31m-        # 动作空间大小[m
+[31m-        n_actions = 7  # 基础动作数量[m
+[31m-        if self.config.enable_bug_card:[m
+[31m-            n_actions += 1[m
+[31m-        self.action_space = spaces.Discrete(n_actions)[m
+[31m-        [m
+[31m-        # 观察空间[m
+[31m-        board_channels = 8  # 基础通道数[m
+[31m-        if self.config.enable_bug_card:[m
+[31m-            board_channels += 1[m
+[31m-        self.observation_space = spaces.Dict({[m
+[31m-            "board": spaces.Box(low=0, high=1, shape=(board_channels, 8, 8), dtype=np.float32),[m
+[31m-            "hand": spaces.Box(low=0, high=1, shape=(5, 5), dtype=np.float32),[m
+[31m-            "program": spaces.Box(low=0, high=1, shape=(self.config.max_program_size, 5), dtype=np.float32)[m
+[31m-        })[m
+[31m-        [m
+[31m-        # 初始化游戏状态[m
+[31m-        self.board = None[m
+[31m-        self.players = None[m
+[31m-        self.current_player = 0[m
+[31m-        self.game_over = False[m
+[31m-        self.winner = None[m
+[31m-        [m
+[31m-        # 重置环境[m
+[31m-        self.reset()[m
+[31m-[m
+[31m-    def reset(self, seed=None, options=None):[m
+[31m-        """重置环境到初始状态"""[m
+[31m-        super().reset(seed=seed)[m
+[31m-        [m
+[31m-        # 初始化棋盘[m
+[31m-        self.board = np.zeros((8, 8), dtype=int)[m
+[31m-        [m
+[31m-        # 初始化玩家[m
+[31m-        self.players = [][m
+[31m-        start_positions = [(0, 3), (7, 3), (3, 0), (3, 7)][:self.num_players][m
+[31m-        start_directions = [Direction.SOUTH, Direction.NORTH, Direction.EAST, Direction.WEST][:self.num_players][m
+[31m-        [m
+[31m-        for i in range(self.num_players):[m
+[31m-            # 创建卡牌堆[m
+[31m-            cards = self._create_deck()[m
+[31m-            [m
+[31m-            # 创建玩家[m
+[31m-            player = Player([m
+[31m-                position=start_positions[i],[m
+[31m-                direction=start_directions[i],[m
+[31m-                cards=cards,[m
+[31m-                start_position=start_positions[i][m
+[31m-            )[m
+[31m-            self.players.append(player)[m
+[31m-            [m
+[31m-            # 在棋盘上标记玩家位置[m
+[31m-            self.board[start_positions[i]] = i + 1[m
+[31m-        [m
+[31m-        self.current_player = 0[m
+[31m-        self.game_over = False[m
+[31m-        self.winner = None[m
+[31m-        [m
+[31m-        return self._get_observation(), {}[m
+[31m-[m
+[31m-    def _create_deck(self) -> List[CardType]:[m
+[31m-        """创建一副牌"""[m
+[31m-        deck = [][m
+[31m-        # 添加基础卡牌[m
+[31m-        deck.extend([CardType.BLUE] * 18)    # 移动卡[m
+[31m-        deck.extend([CardType.YELLOW] * 8)   # 转向卡[m
+[31m-        deck.extend([CardType.PURPLE] * 3)   # 射线卡[m
+[31m-        deck.extend([CardType.LASER] * 3)    # 激光卡[m
+[31m-        [m
+[31m-        # 如果启用了BugCard[m
+[31m-        if self.config.enable_bug_card:[m
+[31m-            deck.extend([CardType.BUG] * 3)[m
+[31m-        [m
+[31m-        # 洗牌[m
+[31m-        self.np_random.shuffle(deck)[m
+[31m-        return deck[m
+[31m-[m
+[31m-    def step(self, action):[m
+[31m-        """执行一步动作"""[m
+[31m-        if self.game_over:[m
+[31m-            return self._get_observation(), 0, True, False, {}[m
+[31m-        [m
+[31m-        player = self.players[self.current_player][m
+[31m-        reward = 0[m
+[31m-        [m
+[31m-        # 处理动作[m
+[31m-        if action < 5:  # 使用手牌[m
+[31m-            if action < len(player.hand):[m
+[31m-                card = player.hand.pop(action)[m
+[31m-                player.add_to_program(card)[m
+[31m-                reward = 0.1  # 小奖励[m
+[31m-        elif action == 5:  # 执行程序[m
+[31m-            reward = self._execute_program(player)[m
+[31m-        elif action == 6:  # 清空程序[m
+[31m-            player.program = [][m
+[31m-            reward = -0.1  # 小惩罚[m
+[31m-        elif action == 7 and self.config.enable_bug_card:  # 使用BugCard[m
+[31m-            if player.bug_card:[m
+[31m-                player.program_reversed = not player.program_reversed[m
+[31m-                player.bug_card = False[m
+[31m-                reward = 0.2[m
+[31m-        [m
+[31m-        # 检查游戏是否结束[m
+[31m-        done = self.game_over[m
+[31m-        [m
+[31m-        # 更新当前玩家[m
+[31m-        if not done:[m
+[31m-            self.current_player = (self.current_player + 1) % self.num_players[m
+[31m-        [m
+[31m-        return self._get_observation(), reward, done, False, {}[m
+[31m-[m
+[31m-    def _execute_program(self, player: Player) -> float:[m
+[31m-        """执行玩家的程序"""[m
+[31m-        if not player.program:[m
+[31m-            return -0.1[m
+[31m-        [m
+[31m-        reward = 0[m
+[31m-        original_position = player.position[m
+[31m-        [m
+[31m-        for card in player.program:[m
+[31m-            if card == CardType.BLUE:  # 移动[m
+[31m-                new_pos = self._get_next_position(player.position, player.direction)[m
+[31m-                if self._is_valid_move(new_pos):[m
+[31m-                    self.board[player.position] = 0[m
+[31m-                    player.position = new_pos[m
+[31m-                    self.board[new_pos] = self.current_player + 1[m
+[31m-                    reward += 0.1[m
+[31m-            elif card == CardType.YELLOW:  # 转向[m
+[31m-                player.direction = Direction((player.direction.value + 1) % 4)[m
+[31m-                reward += 0.05[m
+[31m-            elif card == CardType.PURPLE:  # 射线[m
+[31m-                if self._check_win_condition(player):[m
+[31m-                    self.game_over = True[m
+[31m-                    self.winner = self.current_player[m
+[31m-                    return 1.0[m
+[31m-            elif card == CardType.LASER:  # 激光[m
+[31m-                hit_pos = self._fire_laser(player)[m
+[31m-                if hit_pos:[m
+[31m-                    reward += 0.2[m
+[31m-        [m
+[31m-        # 清空程序[m
+[31m-        player.program = [][m
+[31m-        [m
+[31m-        # 如果位置没有变化，给予负奖励[m
+[31m-        if player.position == original_position:[m
+[31m-            reward -= 0.1[m
+[31m-        [m
+[31m-        return reward[m
+[31m-[m
+[31m-    def _get_next_position(self, position: Tuple[int, int], direction: Direction) -> Tuple[int, int]:[m
+[31m-        """获取下一个位置"""[m
+[31m-        x, y = position[m
+[31m-        if direction == Direction.NORTH:[m
+[31m-            return (x - 1, y)[m
+[31m-        elif dir
