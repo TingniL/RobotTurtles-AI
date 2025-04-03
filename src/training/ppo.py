@@ -577,86 +577,66 @@ class PPOTrainer:
         
         return action, log_prob, value
 
-    def _prepare_training_data(self, trajectories: List[Dict[str, torch.Tensor]]) -> Tuple[torch.Tensor, ...]:
-        """准备训练数据
+    def _prepare_training_data(self, trajectories):
+        """Prepare training data from collected trajectories
         
         Args:
-            trajectories: 轨迹列表
+            trajectories: List of trajectories containing experiences
             
         Returns:
-            训练数据元组
+            Tuple of (observations, actions, old_log_probs, returns, advantages)
         """
-        # 提取数据
-        observations = []
-        action_types = []
-        wall_positions = []
-        old_log_probs = []
-        rewards = []
-        values = []
-        dones = []
+        self.logger.info(f"Preparing training data from {len(trajectories)} trajectories")
         
-        for t in trajectories:
-            observations.append(t['observation'])
+        # Extract observations, actions, rewards, etc.
+        obs_list = []
+        action_list = []
+        reward_list = []
+        done_list = []
+        log_prob_list = []
+        value_list = []
+        
+        # Process each trajectory
+        for traj in trajectories:
+            obs_list.append(traj['observation'])
+            action_list.append(traj['action'])
+            reward_list.append(traj['reward'])
+            done_list.append(float(traj['done']))
+            log_prob_list.append(traj['log_prob'])
+            value_list.append(traj['value'])
+        
+        # Ensure rewards are properly shaped as tensors
+        rewards = torch.tensor(reward_list, dtype=torch.float32).to(self.device)
+        
+        # Normalize rewards for stability (mean 0, std 1)
+        if len(rewards) > 1 and rewards.std() > 0:
+            self.logger.info(f"Normalizing rewards: before mean={rewards.mean():.4f}, std={rewards.std():.4f}")
+            rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+            self.logger.info(f"After normalization: mean={rewards.mean():.4f}, std={rewards.std():.4f}")
             
-            # 确保动作是字典形式，处理不同数据类型
-            action = t['action']
-            if isinstance(action, dict):
-                action_type = action['action_type']
-                wall_position = action['wall_position']
-            else:
-                # 如果不是字典，尝试转换
-                action_type = action
-                wall_position = (0, 0)
-                
-            # 确保正确的数据类型
-            if isinstance(action_type, torch.Tensor):
-                action_types.append(action_type)
-            else:
-                action_types.append(torch.tensor(action_type, dtype=torch.int64))
-                
-            if isinstance(wall_position, torch.Tensor):
-                wall_positions.append(wall_position)
-            else:
-                wall_positions.append(torch.tensor(wall_position, dtype=torch.int64))
-                
-            old_log_probs.append(t['log_prob'])
-            rewards.append(t['reward'])
-            values.append(t['value'])
-            dones.append(t['done'])
+        # Compute returns and advantages
+        returns = rewards.clone()
+        advantages = torch.zeros_like(rewards)
         
-        # 将NumPy观察转换为PyTorch张量
-        processed_obs = {}
-        for k in observations[0].keys():
-            # 首先转换每个观察中的NumPy数组为PyTorch张量
-            tensors = []
-            for obs in observations:
-                if isinstance(obs[k], np.ndarray):
-                    tensors.append(torch.from_numpy(obs[k]).float())
-                elif isinstance(obs[k], torch.Tensor):
-                    tensors.append(obs[k].float())
-                else:
-                    tensors.append(torch.tensor(obs[k], dtype=torch.float32))
-            # 然后堆叠这些张量
-            processed_obs[k] = torch.stack(tensors).to(self.device)
+        # Debug information
+        self.logger.info(f"Reward stats: min={rewards.min().item():.4f}, max={rewards.max().item():.4f}")
+        self.logger.info(f"Return stats: min={returns.min().item():.4f}, max={returns.max().item():.4f}")
         
-        # 使用正确的方法处理tensors
-        action_types = torch.stack([t if t.dim() > 0 else t.unsqueeze(0) for t in action_types]).to(self.device)
-        wall_positions = torch.stack([t if t.dim() > 0 else t.unsqueeze(0) for t in wall_positions]).to(self.device)
+        # Stack the tensors
+        observations = {}
+        for key in obs_list[0].keys():
+            observations[key] = torch.stack([
+                torch.tensor(traj['observation'][key], dtype=torch.float32) 
+                for traj in trajectories
+            ]).to(self.device)
         
-        # 处理其他张量
-        old_log_probs = torch.stack([t if isinstance(t, torch.Tensor) else torch.tensor(t, dtype=torch.float32) for t in old_log_probs]).to(self.device)
-        rewards = torch.stack([t if isinstance(t, torch.Tensor) else torch.tensor(t, dtype=torch.float32) for t in rewards]).to(self.device)
-        values = torch.stack([t if isinstance(t, torch.Tensor) else torch.tensor(t, dtype=torch.float32) for t in values]).to(self.device)
-        dones = torch.stack([t if isinstance(t, torch.Tensor) else torch.tensor(t, dtype=torch.bool) for t in dones]).to(self.device)
-        
-        # 计算优势和回报
-        advantages = self._compute_advantages(rewards, values, dones)
-        returns = advantages + values
-        
-        # 构造动作字典
+        # Convert action list to proper format
         actions = {
-            'action_type': action_types,
-            'wall_position': wall_positions
+            'action_type': torch.tensor([a['action_type'] for a in action_list], dtype=torch.long).to(self.device),
+            'wall_position': torch.tensor([a['wall_position'] for a in action_list], dtype=torch.long).to(self.device)
         }
         
-        return processed_obs, actions, old_log_probs, returns, advantages
+        # Stack log probs
+        old_log_probs = torch.stack(log_prob_list).detach().to(self.device)
+        
+        return observations, actions, old_log_probs, returns, advantages

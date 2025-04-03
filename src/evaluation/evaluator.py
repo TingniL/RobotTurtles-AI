@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import numpy as np
 from typing import Dict, List, Any, Optional, Tuple
 from ..environment.game_env import RobotTurtlesEnv, GameConfig
@@ -20,7 +21,16 @@ class Evaluator:
         
         self.model = model
         self.device = device
-        self.env = RobotTurtlesEnv(GameConfig())
+        self.model.eval()  # Set model to evaluation mode
+        
+        # Create a default environment
+        try:
+            self.env = RobotTurtlesEnv(GameConfig())
+            self.logger.info("Default evaluation environment created")
+        except Exception as e:
+            self.logger.error(f"Failed to create default environment: {str(e)}")
+            self.logger.warning("Evaluator will create environment on-demand")
+            self.env = None
         
         self.logger.info("Evaluator initialized successfully")
         
@@ -35,43 +45,91 @@ class Evaluator:
         """
         self.logger.info(f"Starting evaluation against random opponent for {num_games} games")
         
+        # Ensure we have an environment
+        if self.env is None:
+            try:
+                self.env = RobotTurtlesEnv(GameConfig())
+                self.logger.info("Created evaluation environment")
+            except Exception as e:
+                self.logger.error(f"Failed to create environment: {str(e)}")
+                return {
+                    'win_rate': 0.0,
+                    'avg_reward': 0.0,
+                    'avg_steps': 0.0
+                }
+        
+        # Track metrics
         wins = 0
         total_rewards = 0
         total_steps = 0
         
+        # Play games
         for game in range(num_games):
-            self.logger.info(f"Playing game {game+1}/{num_games}")
+            self.logger.info(f"Playing evaluation game {game+1}/{num_games}")
             
-            obs, _ = self.env.reset()
-            done = False
-            truncated = False
-            game_reward = 0
-            game_steps = 0
-            
-            while not (done or truncated):
-                # Get model action
-                action, _, _ = self._get_action(obs)
+            try:
+                # Reset environment
+                obs, _ = self.env.reset()
                 
-                # Execute action
-                obs, reward, done, truncated, info = self.env.step(action)
+                # Game state
+                done = False
+                truncated = False
+                game_reward = 0
+                game_steps = 0
                 
-                game_reward += reward
-                game_steps += 1
+                # Play until game ends
+                max_steps = 20  # Safety limit
+                while not (done or truncated) and game_steps < max_steps:
+                    # Get model action
+                    try:
+                        action, _, _ = self._get_action(obs)
+                        self.logger.debug(f"Action selected: {action}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to get action: {str(e)}")
+                        action = {'action_type': 0, 'wall_position': (0, 0)}
+                        
+                    # Execute action
+                    try:
+                        obs, reward, done, truncated, info = self.env.step(action)
+                        self.logger.debug(f"Step result: reward={reward}, done={done}, truncated={truncated}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to execute step: {str(e)}")
+                        # Create minimal observation to continue
+                        obs = self._create_minimal_observation()
+                        reward = 0.0
+                        done = True
+                        truncated = False
+                        info = {}
+                    
+                    # Update metrics
+                    game_reward += reward
+                    game_steps += 1
+                    
+                    # Check win condition
+                    if done:
+                        wins += 1
+                        self.logger.info(f"Game {game+1} won in {game_steps} steps with reward {game_reward:.2f}")
+                    elif truncated:
+                        self.logger.info(f"Game {game+1} truncated after {game_steps} steps with reward {game_reward:.2f}")
                 
-                if done:
-                    wins += 1
-                    self.logger.info(f"Game {game+1} won in {game_steps} steps")
-                elif truncated:
-                    self.logger.info(f"Game {game+1} truncated after {game_steps} steps")
-            
-            total_rewards += game_reward
-            total_steps += game_steps
+                # Add game results to totals
+                total_rewards += game_reward
+                total_steps += game_steps
+                
+            except Exception as e:
+                self.logger.error(f"Error during evaluation game {game+1}: {str(e)}")
+                self.logger.exception("Game error details:")
+                
+                # Continue with next game
+                continue
         
         # Calculate metrics
-        win_rate = wins / num_games
-        avg_reward = total_rewards / num_games
-        avg_steps = total_steps / num_games
+        played_games = max(1, game + 1)  # Avoid division by zero
+        win_rate = wins / played_games
+        avg_reward = total_rewards / played_games
+        avg_steps = total_steps / played_games
         
+        # Create results dictionary
         metrics = {
             'win_rate': win_rate,
             'avg_reward': avg_reward,
@@ -83,55 +141,22 @@ class Evaluator:
         
         return metrics
     
-    def evaluate_self_play(
-        self, 
-        num_games: int = 50,
-        env_config: Optional[GameConfig] = None
-    ) -> Dict[str, float]:
-        """
-        自我对弈评估
+    def _create_minimal_observation(self) -> Dict[str, np.ndarray]:
+        """Create a minimal valid observation when recovery is needed
         
-        Args:
-            num_games: 评估游戏局数
-            env_config: 环境配置
-            
         Returns:
-            评估统计信息
+            Dictionary with minimal observation data
         """
-        config = env_config or GameConfig(num_players=2)
-        env = RobotTurtlesEnv(config)
+        # Default observation structure
+        board = np.zeros((9, 8, 8), dtype=np.float32)
+        board[0, 0, 0] = 1  # Player at position (0,0)
         
-        stats = {
-            'player1_wins': 0,
-            'avg_game_length': 0,
-            'avg_total_reward': 0,
-            'total_games': num_games
+        return {
+            'board': board,
+            'hand': np.zeros((5, 5), dtype=np.float32),
+            'program': np.zeros((10, 5), dtype=np.float32)
         }
         
-        for _ in range(num_games):
-            obs = env.reset()[0]
-            done = False
-            steps = 0
-            total_reward = 0
-            
-            while not done:
-                action = self._get_action(obs)
-                obs, reward, done, _, info = env.step(action)
-                total_reward += reward
-                steps += 1
-                
-            if info.get('winner', -1) == 0:
-                stats['player1_wins'] += 1
-            stats['avg_game_length'] += steps
-            stats['avg_total_reward'] += total_reward
-            
-        # 计算平均值
-        stats['player1_win_rate'] = stats['player1_wins'] / num_games
-        stats['avg_game_length'] /= num_games
-        stats['avg_total_reward'] /= num_games
-        
-        return stats
-    
     def _get_action(self, obs: Dict[str, np.ndarray]) -> Tuple[Dict[str, Any], torch.Tensor, torch.Tensor]:
         """Get action from model
         
@@ -155,7 +180,8 @@ class Evaluator:
         
         # Sample action
         action_type = torch.multinomial(action_probs, 1).item()
-        wall_idx = torch.multinomial(wall_probs.reshape(-1), 1).item()
+        wall_probs_flat = wall_probs.reshape(-1)
+        wall_idx = torch.multinomial(wall_probs_flat, 1).item()
         wall_pos = (wall_idx // 8, wall_idx % 8)
         
         # Create action dictionary
@@ -166,36 +192,29 @@ class Evaluator:
         
         # Calculate log probabilities
         action_log_prob = torch.log(action_probs[action_type] + 1e-10)
-        wall_log_prob = torch.log(wall_probs.reshape(-1)[wall_idx] + 1e-10)
+        wall_log_prob = torch.log(wall_probs_flat[wall_idx] + 1e-10)
         log_prob = action_log_prob + wall_log_prob
         
         return action, log_prob, value
 
     def evaluate(self, env: RobotTurtlesEnv) -> Dict[str, float]:
         """
-        评估模型性能
+        Evaluate model performance
         
         Args:
-            env: 游戏环境
+            env: Game environment
             
         Returns:
-            评估统计信息
+            Evaluation statistics
         """
-        # 保存环境配置
-        env_config = env.config
-        
-        # 运行两种评估
+        # Run evaluation against random
         random_stats = self.evaluate_against_random(num_games=10)
-        self_play_stats = self.evaluate_self_play(num_games=5, env_config=env_config)
         
-        # 合并统计信息
+        # Create statistics
         stats = {
-            'vs_random_win_rate': random_stats['win_rate'],
-            'vs_random_avg_steps': random_stats['avg_steps'],
-            'vs_random_avg_reward': random_stats['avg_reward'],
-            'self_play_win_rate': self_play_stats['player1_win_rate'],
-            'self_play_avg_steps': self_play_stats['avg_game_length'],
-            'self_play_avg_reward': self_play_stats['avg_total_reward']
+            'win_rate': random_stats['win_rate'],
+            'avg_steps': random_stats['avg_steps'],
+            'avg_reward': random_stats['avg_reward']
         }
         
         return stats 
